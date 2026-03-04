@@ -1,0 +1,7 @@
+venv/
+.env
+.token_cache.json
+.podcast_cache.json
+__pycache__/
+*.pyc
+.claude/
