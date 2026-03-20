@@ -44,47 +44,90 @@ def _check_config() -> None:
         sys.exit(1)
 
 
-def _get_access_token() -> str:
-    """Get OAuth access token via client credentials, with caching."""
-    # Try cache first
+def _load_token_cache() -> dict:
     if os.path.exists(TOKEN_CACHE):
         with open(TOKEN_CACHE, "r") as f:
             cache = json.load(f)
-        if cache.get("expires_at", 0) > time.time() + 60:
-            return cache["access_token"]
+        # Migrate old single-token cache format
+        if "default" not in cache and "access_token" in cache:
+            return {}
+        return cache
+    return {}
 
-    # Request new token
+
+def _save_token_cache(cache: dict) -> None:
+    with open(TOKEN_CACHE, "w") as f:
+        json.dump(cache, f, indent=2)
+
+
+def _refresh_tokens() -> dict:
+    """Fetch tokens for all podcasts via multiplePodcastsToken endpoint."""
     resp = requests.post(
-        f"{API_BASE}/oauth/token",
+        f"{API_BASE}/oauth/multiplePodcastsToken",
         auth=(CLIENT_ID, CLIENT_SECRET),
         data={"grant_type": "client_credentials"},
         timeout=30,
     )
     if resp.status_code != 200:
-        print(f"ERROR: OAuth failed ({resp.status_code}): {resp.text}", file=sys.stderr)
+        print(f"ERROR: OAuth multiplePodcastsToken failed ({resp.status_code}): {resp.text}", file=sys.stderr)
         sys.exit(1)
 
     token_data = resp.json()
-    access_token = token_data["access_token"]
-    expires_in = token_data.get("expires_in", 3600)
+    now = time.time()
 
-    # Cache token
-    with open(TOKEN_CACHE, "w") as f:
-        json.dump({
-            "access_token": access_token,
-            "expires_at": time.time() + expires_in,
-        }, f)
+    cache: dict = {
+        "default": {
+            "access_token": token_data["access_token"],
+            "expires_at": now + token_data.get("expires_in", 3600),
+        },
+        "podcasts": {},
+    }
 
-    return access_token
+    for pod in token_data.get("podcasts", []):
+        pid = pod["podcast_id"]
+        cache["podcasts"][pid] = {
+            "access_token": pod["access_token"],
+            "expires_at": now + pod.get("expires_in", 3600),
+            "title": pod.get("title", ""),
+        }
+
+    _save_token_cache(cache)
+    return cache
+
+
+def _get_access_token(podcast_id: str | None = None) -> str:
+    """Get OAuth access token. If podcast_id given, return podcast-specific token."""
+    cache = _load_token_cache()
+
+    if podcast_id and cache.get("podcasts", {}).get(podcast_id):
+        entry = cache["podcasts"][podcast_id]
+        if entry.get("expires_at", 0) > time.time() + 60:
+            return entry["access_token"]
+    elif not podcast_id and cache.get("default"):
+        entry = cache["default"]
+        if entry.get("expires_at", 0) > time.time() + 60:
+            return entry["access_token"]
+
+    # Refresh all tokens
+    cache = _refresh_tokens()
+
+    if podcast_id:
+        pod_entry = cache.get("podcasts", {}).get(podcast_id)
+        if not pod_entry:
+            print(f"ERROR: No token returned for podcast_id '{podcast_id}'. Check your credentials.", file=sys.stderr)
+            sys.exit(1)
+        return pod_entry["access_token"]
+
+    return cache["default"]["access_token"]
 
 
 # ---------------------------------------------------------------------------
 # API helpers
 # ---------------------------------------------------------------------------
 
-def _api_get(endpoint: str, params: dict | None = None) -> dict:
+def _api_get(endpoint: str, params: dict | None = None, podcast_id: str | None = None) -> dict:
     """GET request with access_token as query parameter."""
-    token = _get_access_token()
+    token = _get_access_token(podcast_id)
     url = f"{API_BASE}/{endpoint.lstrip('/')}"
     p = dict(params or {})
     p["access_token"] = token
@@ -95,9 +138,9 @@ def _api_get(endpoint: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
-def _api_post(endpoint: str, data: dict | None = None) -> dict:
+def _api_post(endpoint: str, data: dict | None = None, podcast_id: str | None = None) -> dict:
     """POST request with access_token in form data."""
-    token = _get_access_token()
+    token = _get_access_token(podcast_id)
     url = f"{API_BASE}/{endpoint.lstrip('/')}"
     d = dict(data or {})
     d["access_token"] = token
@@ -110,9 +153,9 @@ def _api_post(endpoint: str, data: dict | None = None) -> dict:
     return resp.json()
 
 
-def _api_put(endpoint: str, data: dict | None = None) -> dict:
+def _api_put(endpoint: str, data: dict | None = None, podcast_id: str | None = None) -> dict:
     """PUT request with access_token in form data."""
-    token = _get_access_token()
+    token = _get_access_token(podcast_id)
     url = f"{API_BASE}/{endpoint.lstrip('/')}"
     d = dict(data or {})
     d["access_token"] = token
@@ -125,9 +168,9 @@ def _api_put(endpoint: str, data: dict | None = None) -> dict:
     return resp.json()
 
 
-def _api_delete(endpoint: str, data: dict | None = None) -> dict:
+def _api_delete(endpoint: str, data: dict | None = None, podcast_id: str | None = None) -> dict:
     """DELETE request with access_token in form data."""
-    token = _get_access_token()
+    token = _get_access_token(podcast_id)
     url = f"{API_BASE}/{endpoint.lstrip('/')}"
     d = dict(data or {})
     d["access_token"] = token
@@ -222,10 +265,8 @@ def cmd_episodes(args: argparse.Namespace) -> None:
         "offset": args.offset,
         "limit": args.limit,
     }
-    if podcast_id:
-        params["podcast_id"] = podcast_id
 
-    data = _api_get("/episodes", params)
+    data = _api_get("/episodes", params, podcast_id=podcast_id)
     episodes = data.get("episodes", [])
 
     if not episodes:
@@ -269,7 +310,8 @@ def cmd_episodes(args: argparse.Namespace) -> None:
 
 def cmd_episode_get(args: argparse.Namespace) -> None:
     """Get detail of a single episode."""
-    data = _api_get(f"/episodes/{args.episode_id}")
+    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
+    data = _api_get(f"/episodes/{args.episode_id}", podcast_id=podcast_id)
     ep = data.get("episode", data)
 
     if args.json:
@@ -316,17 +358,18 @@ def cmd_upload(args: argparse.Namespace) -> None:
     }
     content_type = content_types.get(ext, "audio/mpeg")
 
+    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
+
     # Step 1: Authorize upload
     print(f"Step 1/3: Authorizing upload for {filename} ({file_size} bytes)...")
     auth_data = _api_get("/files/uploadAuthorize", {
         "filename": filename,
         "content_type": content_type,
         "filesize": file_size,
-    })
+    }, podcast_id=podcast_id)
 
     presigned_url = auth_data.get("presigned_url", "")
     file_key = auth_data.get("file_key", "")
-    expire_at = auth_data.get("expire_at", "")
 
     if not presigned_url or not file_key:
         print(f"ERROR: Upload authorization failed. Response: {json.dumps(auth_data)}", file=sys.stderr)
@@ -360,14 +403,10 @@ def cmd_upload(args: argparse.Namespace) -> None:
         "media_key": file_key,
     }
 
-    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
-    if podcast_id:
-        episode_data["podcast_id"] = podcast_id
-
     if args.apple_episode_type:
         episode_data["apple_episode_type"] = args.apple_episode_type
 
-    result = _api_post("/episodes", episode_data)
+    result = _api_post("/episodes", episode_data, podcast_id=podcast_id)
     ep = result.get("episode", result)
 
     output = {
@@ -391,6 +430,7 @@ def cmd_upload(args: argparse.Namespace) -> None:
 
 def cmd_episode_update(args: argparse.Namespace) -> None:
     """Update episode metadata."""
+    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
     data: dict[str, str] = {}
 
     if args.title:
@@ -406,9 +446,7 @@ def cmd_episode_update(args: argparse.Namespace) -> None:
         print("ERROR: No fields to update. Use --title, --description, --status, or --apple-episode-type.", file=sys.stderr)
         sys.exit(1)
 
-    data["id"] = args.episode_id
-
-    result = _api_put("/episodes", data)
+    result = _api_post(f"/episodes/{args.episode_id}", data, podcast_id=podcast_id)
     ep = result.get("episode", result)
 
     output = {
@@ -436,7 +474,8 @@ def cmd_episode_delete(args: argparse.Namespace) -> None:
         print("  Usage: episode-delete --episode-id ID --confirm", file=sys.stderr)
         sys.exit(1)
 
-    _api_delete("/episodes", {"id": args.episode_id})
+    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
+    _api_post(f"/episodes/{args.episode_id}/delete", podcast_id=podcast_id)
 
     output = {
         "episode_id": args.episode_id,
@@ -476,6 +515,7 @@ def main() -> None:
     # --- episode-get ---
     p_ep_get = subparsers.add_parser("episode-get", help="Get episode detail")
     p_ep_get.add_argument("--episode-id", required=True, help="Episode ID")
+    p_ep_get.add_argument("--podcast", type=str, help="Podcast slug (for multi-podcast accounts)")
     p_ep_get.add_argument("--json", **json_kwargs)
 
     # --- upload ---
@@ -492,6 +532,7 @@ def main() -> None:
     # --- episode-update ---
     p_ep_update = subparsers.add_parser("episode-update", help="Update episode metadata")
     p_ep_update.add_argument("--episode-id", required=True, help="Episode ID")
+    p_ep_update.add_argument("--podcast", type=str, help="Podcast slug (for multi-podcast accounts)")
     p_ep_update.add_argument("--title", type=str, help="New title")
     p_ep_update.add_argument("--description", type=str, help="New description (HTML)")
     p_ep_update.add_argument("--status", type=str, choices=["draft", "publish"], help="New status")
@@ -501,6 +542,7 @@ def main() -> None:
     # --- episode-delete ---
     p_ep_delete = subparsers.add_parser("episode-delete", help="Delete an episode")
     p_ep_delete.add_argument("--episode-id", required=True, help="Episode ID")
+    p_ep_delete.add_argument("--podcast", type=str, help="Podcast slug (for multi-podcast accounts)")
     p_ep_delete.add_argument("--confirm", action="store_true", help="Required to confirm deletion")
     p_ep_delete.add_argument("--json", **json_kwargs)
 

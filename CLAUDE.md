@@ -13,7 +13,7 @@ source venv/bin/activate && python podbean_cli.py <command>
 ```
 podbean_cli.py           # Main CLI (single file)
 .env                     # PODBEAN_CLIENT_ID, PODBEAN_CLIENT_SECRET
-.token_cache.json        # Cached OAuth token (auto-generated)
+.token_cache.json        # Cached per-podcast OAuth tokens (auto-generated)
 .podcast_cache.json      # Slug → podcast_id mapping (auto-generated)
 ```
 
@@ -23,10 +23,10 @@ podbean_cli.py           # Main CLI (single file)
 |---------|---------|-----------|
 | `podcasts` | List podcasts, cache slug mapping (run first!) | `--json` |
 | `episodes` | List episodes | `--podcast SLUG`, `--offset`, `--limit`, `--json` |
-| `episode-get` | Get episode detail | `--episode-id ID`, `--json` |
+| `episode-get` | Get episode detail | `--episode-id ID`, `--podcast SLUG`, `--json` |
 | `upload` | Upload audio + create episode (3-step) | `--file`, `--title`, `--podcast SLUG`, `--status draft\|publish`, `--json` |
-| `episode-update` | Update episode metadata | `--episode-id ID`, `--title`, `--status`, `--description`, `--json` |
-| `episode-delete` | Delete episode | `--episode-id ID`, `--confirm` (required) |
+| `episode-update` | Update episode metadata | `--episode-id ID`, `--podcast SLUG`, `--title`, `--status`, `--description`, `--json` |
+| `episode-delete` | Delete episode | `--episode-id ID`, `--podcast SLUG`, `--confirm` (required) |
 
 ## Safety
 
@@ -37,8 +37,11 @@ podbean_cli.py           # Main CLI (single file)
 ## API Notes
 
 - Base URL: `https://api.podbean.com/v1`
-- Auth: OAuth Client Credentials — token passed as query/body param (NOT Bearer header)
-- POST/PUT/DELETE: form-encoded (`data=`), NOT JSON
+- Auth: OAuth via `/oauth/multiplePodcastsToken` — returns per-podcast tokens
+- Token determines which podcast's data is returned (NOT a `podcast_id` query param)
+- POST body: form-encoded (`data=`), NOT JSON
+- Episode update: `POST /episodes/{id}` (not PUT)
+- Episode delete: `POST /episodes/{id}/delete` (not DELETE)
 - Upload flow: authorize → PUT to S3 presigned URL → POST /episodes with `media_key`
 
 ## Conventions
