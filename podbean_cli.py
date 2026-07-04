@@ -441,9 +441,17 @@ def cmd_episode_update(args: argparse.Namespace) -> None:
         data["status"] = args.status
     if args.apple_episode_type:
         data["apple_episode_type"] = args.apple_episode_type
+    if args.type:
+        data["type"] = args.type
+
+    # Podbean's episode-update endpoint rejects a status change ("Episode type
+    # is invalid") unless a valid `type` is also present. Default to public when
+    # changing status without an explicit type.
+    if args.status and "type" not in data:
+        data["type"] = "public"
 
     if not data:
-        print("ERROR: No fields to update. Use --title, --description, --status, or --apple-episode-type.", file=sys.stderr)
+        print("ERROR: No fields to update. Use --title, --description, --status, --type, or --apple-episode-type.", file=sys.stderr)
         sys.exit(1)
 
     result = _api_post(f"/episodes/{args.episode_id}", data, podcast_id=podcast_id)
@@ -536,6 +544,7 @@ def main() -> None:
     p_ep_update.add_argument("--title", type=str, help="New title")
     p_ep_update.add_argument("--description", type=str, help="New description (HTML)")
     p_ep_update.add_argument("--status", type=str, choices=["draft", "publish"], help="New status")
+    p_ep_update.add_argument("--type", type=str, choices=["public", "premium", "private"], help="Episode type (Podbean requires a valid type when changing status; defaults to public on publish)")
     p_ep_update.add_argument("--apple-episode-type", type=str, choices=["full", "trailer", "bonus"], help="Apple episode type")
     p_ep_update.add_argument("--json", **json_kwargs)
 
