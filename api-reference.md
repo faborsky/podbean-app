@@ -79,10 +79,18 @@ POST /episodes
 ```
 POST /episodes/{episode_id}
   access_token=TOKEN
-  title=...
+  title=...                # required by the API even on partial edits
+  type=public|premium|private   # required by the API even on partial edits
   content=...
   status=draft|publish
+  logo_key=...             # per-episode artwork (file_key of an uploaded image)
+  remote_logo_url=...      # alternative: a remote image URL
 ```
+
+**Gotcha**: the update endpoint validates the whole episode. A logo-only (or
+status-only) POST fails with "Episode type is invalid" or "Post Title cannot be
+blank" unless a valid `type` and non-blank `title` are also present. Re-fetch the
+episode with `GET /episodes/{id}` and resend its current `title` + `type`.
 
 ### Delete episode
 ```
@@ -92,6 +100,9 @@ POST /episodes/{episode_id}/delete
 ```
 
 ## File Upload (3-step)
+
+Same flow for audio/video (→ `media_key`) and images (→ `logo_key`); only the
+`content_type` differs (e.g. `image/jpeg`).
 
 ### Step 1: Authorize
 
@@ -105,11 +116,14 @@ Response: `{ presigned_url, file_key, expire_at }`
 
 ```
 PUT {presigned_url}
-Content-Type: audio/mpeg
+Content-Type: audio/mpeg      # or image/jpeg, image/png for a logo
 Body: raw file bytes
 ```
 
-### Step 3: Create episode (see POST /episodes above)
+### Step 3: Create/update episode
+
+Use the returned `file_key` as `media_key` (audio/video) or `logo_key` (image)
+in POST /episodes or POST /episodes/{id}.
 
 ## Error Codes
 

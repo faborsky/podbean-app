@@ -123,6 +123,16 @@ python podbean_cli.py episode-update --episode-id EPISODE_ID --status publish
 python podbean_cli.py episode-update --episode-id EPISODE_ID --description "<p>Updated</p>"
 ```
 
+### Set Per-Episode Logo / Artwork
+
+Uploads a local image and sets it as the episode's own artwork (distinct from the
+show logo). Apple artwork spec: square JPG/PNG, 1400–3000 px. Title and status are
+preserved.
+
+```bash
+python podbean_cli.py episode-set-logo --episode-id EPISODE_ID --image /path/to/cover.jpg --podcast my-podcast
+```
+
 ### Delete Episode
 
 Requires `--confirm` flag for safety:

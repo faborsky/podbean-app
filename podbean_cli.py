@@ -184,6 +184,78 @@ def _api_delete(endpoint: str, data: dict | None = None, podcast_id: str | None 
 
 
 # ---------------------------------------------------------------------------
+# Upload helpers
+# ---------------------------------------------------------------------------
+
+MEDIA_CONTENT_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".flac": "audio/flac",
+    ".mp4": "video/mp4",
+}
+
+IMAGE_CONTENT_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+}
+
+
+def _detect_content_type(filename: str, kind: str = "media") -> str:
+    """Map a filename extension to a MIME type. kind is 'media' or 'image'."""
+    ext = os.path.splitext(filename)[1].lower()
+    if kind == "image":
+        return IMAGE_CONTENT_TYPES.get(ext, "image/jpeg")
+    return MEDIA_CONTENT_TYPES.get(ext, "audio/mpeg")
+
+
+def _authorize_and_upload(filepath: str, content_type: str, podcast_id: str | None,
+                          verbose: bool = False) -> str:
+    """Authorize an upload, PUT the file to the presigned URL, return the file_key.
+
+    Shared by audio/video (`upload`) and image (`episode-set-logo`) flows —
+    see Episode Publishing Process in the Podbean API docs.
+    """
+    file_size = os.path.getsize(filepath)
+    filename = os.path.basename(filepath)
+
+    if verbose:
+        print(f"Step 1: Authorizing upload for {filename} ({file_size} bytes)...")
+    auth_data = _api_get("/files/uploadAuthorize", {
+        "filename": filename,
+        "content_type": content_type,
+        "filesize": file_size,
+    }, podcast_id=podcast_id)
+
+    presigned_url = auth_data.get("presigned_url", "")
+    file_key = auth_data.get("file_key", "")
+    if not presigned_url or not file_key:
+        print(f"ERROR: Upload authorization failed. Response: {json.dumps(auth_data)}", file=sys.stderr)
+        sys.exit(1)
+
+    if verbose:
+        print(f"  File key: {file_key}")
+        print("Step 2: Uploading to storage...")
+    with open(filepath, "rb") as f:
+        upload_resp = requests.put(
+            presigned_url,
+            data=f,
+            headers={"Content-Type": content_type},
+            timeout=600,
+        )
+    if upload_resp.status_code not in (200, 201):
+        print(f"ERROR: Upload failed ({upload_resp.status_code}): {upload_resp.text}", file=sys.stderr)
+        sys.exit(1)
+    if verbose:
+        print("  Upload complete.")
+
+    return file_key
+
+
+# ---------------------------------------------------------------------------
 # Podcast cache helpers
 # ---------------------------------------------------------------------------
 
@@ -343,55 +415,11 @@ def cmd_upload(args: argparse.Namespace) -> None:
         print(f"ERROR: File not found: {filepath}", file=sys.stderr)
         sys.exit(1)
 
-    file_size = os.path.getsize(filepath)
-    filename = os.path.basename(filepath)
-
-    # Detect content type
-    ext = os.path.splitext(filename)[1].lower()
-    content_types = {
-        ".mp3": "audio/mpeg",
-        ".m4a": "audio/mp4",
-        ".wav": "audio/wav",
-        ".ogg": "audio/ogg",
-        ".flac": "audio/flac",
-        ".mp4": "video/mp4",
-    }
-    content_type = content_types.get(ext, "audio/mpeg")
-
+    content_type = _detect_content_type(filepath, kind="media")
     podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
 
-    # Step 1: Authorize upload
-    print(f"Step 1/3: Authorizing upload for {filename} ({file_size} bytes)...")
-    auth_data = _api_get("/files/uploadAuthorize", {
-        "filename": filename,
-        "content_type": content_type,
-        "filesize": file_size,
-    }, podcast_id=podcast_id)
-
-    presigned_url = auth_data.get("presigned_url", "")
-    file_key = auth_data.get("file_key", "")
-
-    if not presigned_url or not file_key:
-        print(f"ERROR: Upload authorization failed. Response: {json.dumps(auth_data)}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"  File key: {file_key}")
-
-    # Step 2: Upload to presigned URL (S3)
-    print(f"Step 2/3: Uploading to storage...")
-    with open(filepath, "rb") as f:
-        upload_resp = requests.put(
-            presigned_url,
-            data=f,
-            headers={"Content-Type": content_type},
-            timeout=600,
-        )
-
-    if upload_resp.status_code not in (200, 201):
-        print(f"ERROR: Upload failed ({upload_resp.status_code}): {upload_resp.text}", file=sys.stderr)
-        sys.exit(1)
-
-    print("  Upload complete.")
+    # Steps 1+2: authorize + upload audio to storage
+    file_key = _authorize_and_upload(filepath, content_type, podcast_id, verbose=True)
 
     # Step 3: Create episode
     print(f"Step 3/3: Creating episode...")
@@ -497,6 +525,60 @@ def cmd_episode_delete(args: argparse.Namespace) -> None:
         print(f"  Episode ID: {args.episode_id}")
 
 
+def cmd_episode_set_logo(args: argparse.Namespace) -> None:
+    """Upload a local image and set it as the episode's per-episode logo/artwork.
+
+    Podbean flow: uploadAuthorize (image content_type) -> PUT to presigned URL ->
+    POST /episodes/{id} with logo_key. Apple artwork spec: square JPG/PNG,
+    1400-3000 px. Does not touch title/status/media.
+    """
+    filepath = os.path.expanduser(args.image)
+    if not os.path.exists(filepath):
+        print(f"ERROR: Image not found: {filepath}", file=sys.stderr)
+        sys.exit(1)
+
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext not in IMAGE_CONTENT_TYPES:
+        print(f"ERROR: Unsupported image type '{ext}'. Use one of: {', '.join(IMAGE_CONTENT_TYPES)}.", file=sys.stderr)
+        sys.exit(1)
+
+    content_type = _detect_content_type(filepath, kind="image")
+    podcast_id = _resolve_podcast(args.podcast) if args.podcast else None
+
+    # Podbean's update endpoint validates the whole episode, so a logo-only edit
+    # fails ("Episode type is invalid" / "Post Title cannot be blank") unless the
+    # required fields are resent. Preserve the episode's current title + type.
+    current = _api_get(f"/episodes/{args.episode_id}", podcast_id=podcast_id)
+    cur_ep = current.get("episode", current)
+    ep_type = cur_ep.get("type") or "public"
+    ep_title = cur_ep.get("title") or ""
+
+    # Steps 1+2: upload the image to storage, get its file_key
+    file_key = _authorize_and_upload(filepath, content_type, podcast_id, verbose=not args.json)
+
+    # Step 3: attach the image as the episode logo (resend required fields intact)
+    result = _api_post(f"/episodes/{args.episode_id}",
+                       {"logo_key": file_key, "type": ep_type, "title": ep_title},
+                       podcast_id=podcast_id)
+    ep = result.get("episode", result)
+
+    output = {
+        "episode_id": ep.get("id", args.episode_id),
+        "title": ep.get("title", ""),
+        "logo": ep.get("logo", ""),
+        "logo_key": file_key,
+        "updated": True,
+    }
+
+    if args.json:
+        print(json.dumps(output, indent=2))
+    else:
+        print("Episode logo updated successfully.")
+        print(f"  Episode ID: {output['episode_id']}")
+        print(f"  Title:      {output['title']}")
+        print(f"  Logo URL:   {output['logo']}")
+
+
 # ---------------------------------------------------------------------------
 # CLI setup
 # ---------------------------------------------------------------------------
@@ -555,6 +637,13 @@ def main() -> None:
     p_ep_delete.add_argument("--confirm", action="store_true", help="Required to confirm deletion")
     p_ep_delete.add_argument("--json", **json_kwargs)
 
+    # --- episode-set-logo ---
+    p_ep_logo = subparsers.add_parser("episode-set-logo", help="Set per-episode logo/artwork from a local image")
+    p_ep_logo.add_argument("--episode-id", required=True, help="Episode ID")
+    p_ep_logo.add_argument("--image", required=True, help="Path to image (.jpg/.jpeg/.png), ideally square 1400-3000 px")
+    p_ep_logo.add_argument("--podcast", type=str, help="Podcast slug (for multi-podcast accounts)")
+    p_ep_logo.add_argument("--json", **json_kwargs)
+
     args = parser.parse_args()
     _check_config()
 
@@ -565,6 +654,7 @@ def main() -> None:
         "upload": cmd_upload,
         "episode-update": cmd_episode_update,
         "episode-delete": cmd_episode_delete,
+        "episode-set-logo": cmd_episode_set_logo,
     }
 
     commands[args.command](args)
