@@ -56,3 +56,7 @@ podbean_cli.py           # Main CLI (single file)
 ## Changelog
 
 - **2026-07-17** — Added `episode-set-logo` (per-episode artwork from a local image via `logo_key`). Extracted a shared `_authorize_and_upload` helper reused by `upload` and the new command. Documented the update-endpoint gotcha (a logo-only edit must resend the episode's current `title` + `type`).
+
+## README languages
+
+`README.md` = English, full, source of truth. `README.cs.md` = full Czech. `i18n/README.<lang>.md` = short versions (es, pt-BR, de, fr, zh-CN, ja, sv, nb, da). A README change updates both full versions in the same commit; `i18n/` only when the quick start, main features or name change. Author links: faborsky.com in EN/i18n, faborsky.cz + aifirst.cz in Czech.

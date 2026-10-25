@@ -1,42 +1,46 @@
 # Podbean CLI
 
-Python CLI na správu podcastů na [Podbeanu](https://www.podbean.com/) přes jejich REST API. Postavené tak, aby ho řídil [Claude Code](https://docs.anthropic.com/en/docs/claude-code) nebo jiný AI agent. Ty se věnuješ tvorbě, AI za tebe odbaví administrativu.
+**🇬🇧 English** · [🇨🇿 Čeština](README.cs.md) · [🇪🇸 Español](i18n/README.es.md) · [🇧🇷 Português](i18n/README.pt-BR.md) · [🇩🇪 Deutsch](i18n/README.de.md) · [🇫🇷 Français](i18n/README.fr.md) · [🇨🇳 简体中文](i18n/README.zh-CN.md) · [🇯🇵 日本語](i18n/README.ja.md) · [🇸🇪 Svenska](i18n/README.sv.md) · [🇳🇴 Norsk](i18n/README.nb.md) · [🇩🇰 Dansk](i18n/README.da.md)
+
+A Python CLI that uploads and manages podcast episodes through the [Podbean](https://www.podbean.com/) REST API. For podcasters who publish regularly or in several languages and don't want to click through the Podbean dashboard every time. Built to be driven by [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or another AI agent: you focus on making the show, the AI handles the admin.
+
+Author: [Jindřich Fáborský](https://www.faborsky.com)
 
 > [!TIP]
-> **Appka je zdarma a je tvoje.** Naklonuj si ji, používej ji, přestav si ji po svém.
+> **The app is free and it's yours.** Clone it, use it, rebuild it your way.
 >
-> Nevíš, jak ji rozjet? Nebo chceš AI v marketingu používat systematicky: řídit z jednoho místa všechny kanály, automatizovat rutinu, postavit si vlastní znalostní bázi a vibe codovat si nástroje na míru své firmě? To učím v kurzu **[AI First](https://aifirst.cz)**. Tahle appka je v něm vysvětlená i s tím, jak si postavit vlastní.
+> Want to build tools like this for your own marketing? That's what I teach: **[faborsky.com](https://www.faborsky.com)**.
 
-## Proč to vzniklo
+## Why it exists
 
-Vydat jednu epizodu podcastu znamená překvapivě moc opakované práce: nahrát soubor, vyplnit metadata, nastavit stav, pohlídat drafty. Vynásob si to počtem pořadů a jazyků a utrácíš kreativní energii za administrativu.
+Publishing a single podcast episode takes a surprising amount of repetitive work: upload the file, fill in the metadata, set the status, keep track of drafts. Multiply that by the number of shows and languages, and the time that should go into the show goes into clicking.
 
-Tohle CLI podbeanovské operace zautomatizuje, takže se dají zřetězit s dalšími nástroji do celého podcastového workflow:
+This CLI automates the Podbean side, so it can be chained with other tools into a complete podcast workflow:
 
-1. **Natoč** podcast
-2. **Přepiš a přelož** přes [whisper-cz-en](https://github.com/faborsky/whisper-cz-en)
-3. **Vygeneruj obálku** přes [nanobanana-app](https://github.com/faborsky/nanobanana-app)
-4. **Nahraj a vydej** přes tohle CLI
+1. **Record** the podcast
+2. **Transcribe and translate** with [whisper-cz-en](https://github.com/faborsky/whisper-cz-en)
+3. **Generate the cover art** with [nanobanana-app](https://github.com/faborsky/nanobanana-app)
+4. **Upload and publish** with this CLI
 
-Všechno řídí Claude Code v jedné konverzaci. Ty mluvíš, AI dělá papírování.
+Claude Code runs all of it in a single conversation.
 
-## Co potřebuješ
+## Requirements
 
 - **Python 3.9+**
-- **Účet na Podbeanu** s podcastem
-- **API přístupy k Podbeanu** (client ID a secret)
+- **A Podbean account** with a podcast
+- **Podbean API credentials** (client ID and secret)
 
-### Jak získat API přístupy k Podbeanu
+### Getting Podbean API credentials
 
-1. Jdi na [Podbean Developer Portal](https://developers.podbean.com/)
-2. Klikni na **Register a New App**
-3. Vyplň údaje o aplikaci (název, kontaktní e-mail, logo)
-4. Po schválení jdi do **My Apps** a klikni na **Manage App**
-5. Zkopíruj si **App ID** (client ID) a **App Secret** (client secret)
+1. Go to the [Podbean Developer Portal](https://developers.podbean.com/)
+2. Click **Register a New App**
+3. Fill in the app details (name, contact email, logo)
+4. Once approved, go to **My Apps** and click **Manage App**
+5. Copy the **App ID** (client ID) and **App Secret** (client secret)
 
-Dokumentace API: [developers.podbean.com/podbean-api-docs](https://developers.podbean.com/podbean-api-docs/)
+API documentation: [developers.podbean.com/podbean-api-docs](https://developers.podbean.com/podbean-api-docs/)
 
-## Instalace
+## Installation
 
 ```bash
 git clone https://github.com/faborsky/podbean-app.git
@@ -47,38 +51,38 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# uprav .env a doplň přístupy k Podbeanu
+# edit .env and add your Podbean credentials
 ```
 
-## Konfigurace
+## Configuration
 
-Do `.env` doplň své API přístupy k Podbeanu:
+Add your Podbean API credentials to `.env`:
 
 ```
 PODBEAN_CLIENT_ID=your-client-id-here
 PODBEAN_CLIENT_SECRET=your-client-secret-here
 ```
 
-OAuth tokeny si CLI spravuje samo (cachuje je do `.token_cache.json`).
+The CLI manages OAuth tokens by itself (it caches them in `.token_cache.json`).
 
-## Používání
+## Usage
 
-Vždycky si nejdřív aktivuj virtuální prostředí:
+Always activate the virtual environment first:
 
 ```bash
 source venv/bin/activate
 ```
 
-### Výpis podcastů
+### List podcasts
 
-Tohle spusť jako první, naplní se tím lokální cache slugů podcastů:
+Run this first. It fills the local cache of podcast slugs:
 
 ```bash
 python podbean_cli.py podcasts
 python podbean_cli.py podcasts --json
 ```
 
-### Výpis epizod
+### List episodes
 
 ```bash
 python podbean_cli.py episodes --podcast my-podcast
@@ -86,33 +90,33 @@ python podbean_cli.py episodes --podcast my-podcast --limit 50 --offset 0
 python podbean_cli.py episodes --json
 ```
 
-### Detail epizody
+### Episode details
 
 ```bash
 python podbean_cli.py episode-get --episode-id EPISODE_ID
 python podbean_cli.py episode-get --episode-id EPISODE_ID --json
 ```
 
-### Nahrání a vytvoření epizody
+### Upload and create an episode
 
-Tři kroky: autorizace uploadu, upload na S3, vytvoření epizody. Epizoda se pro jistotu vytvoří jako **draft**.
+Three steps: authorize the upload, upload to S3, create the episode. To be safe, the episode is created as a **draft**.
 
 ```bash
-# vytvoří draft (výchozí, bezpečné)
+# create a draft (default, safe)
 python podbean_cli.py upload \
   --file /path/to/episode.mp3 \
   --title "Episode Title" \
   --description "<p>Episode description in HTML</p>" \
   --podcast my-podcast
 
-# vytvoří a rovnou publikuje
+# create and publish right away
 python podbean_cli.py upload \
   --file /path/to/episode.mp3 \
   --title "Episode Title" \
   --podcast my-podcast \
   --status publish
 
-# s typem epizody pro Apple Podcasts
+# with an episode type for Apple Podcasts
 python podbean_cli.py upload \
   --file /path/to/episode.mp3 \
   --title "Episode Title" \
@@ -120,7 +124,7 @@ python podbean_cli.py upload \
   --apple-episode-type full
 ```
 
-### Úprava epizody
+### Update an episode
 
 ```bash
 python podbean_cli.py episode-update --episode-id EPISODE_ID --title "New Title"
@@ -128,81 +132,81 @@ python podbean_cli.py episode-update --episode-id EPISODE_ID --status publish
 python podbean_cli.py episode-update --episode-id EPISODE_ID --description "<p>Updated</p>"
 ```
 
-### Vlastní obálka konkrétní epizody
+### Custom cover art for a single episode
 
-Nahraje lokální obrázek a nastaví ho jako obálku epizody, což je jiná věc než logo
-celého pořadu. Apple chce čtverec JPG/PNG, 1400–3000 px. Název a stav epizody
-zůstanou beze změny.
+Uploads a local image and sets it as the episode's artwork, which is separate from the
+show's logo. Apple wants a square JPG/PNG, 1400–3000 px. The episode's title and status
+stay unchanged.
 
 ```bash
 python podbean_cli.py episode-set-logo --episode-id EPISODE_ID --image /path/to/cover.jpg --podcast my-podcast
 ```
 
-### Smazání epizody
+### Delete an episode
 
-Kvůli bezpečnosti to chce flag `--confirm`:
+For safety, this requires the `--confirm` flag:
 
 ```bash
 python podbean_cli.py episode-delete --episode-id EPISODE_ID --confirm
 ```
 
-### JSON výstup
+### JSON output
 
-Všechny příkazy umí `--json` pro strojově čitelný výstup. Hodí se to, když je orchestruje AI agent:
+Every command supports `--json` for machine-readable output. Useful when an AI agent orchestrates the commands:
 
 ```bash
 python podbean_cli.py episodes --podcast my-podcast --json
 ```
 
-## Dvojjazyčné workflow (CZ/EN)
+## Bilingual workflow (CZ/EN)
 
-Typický průběh dvojjazyčného podcastu, který řídí Claude Code:
+A typical run of a bilingual podcast, driven by Claude Code:
 
 ```
-1. Natočíš epizodu (CZ nebo EN)
-2. Přepis přes whisper-cz-en → .md přepis
-3. Překlad přepisu (CZ↔EN) v Claude
-4. Popisy epizody v obou jazycích
-5. Obálka přes nanobanana-app
-6. Upload CZ verze → podbean-app (draft)
-7. Upload EN verze → podbean-app (draft)
-8. Projdeš drafty a publikuješ
+1. Record the episode (CZ or EN)
+2. Transcribe with whisper-cz-en → .md transcript
+3. Translate the transcript (CZ↔EN) in Claude
+4. Write episode descriptions in both languages
+5. Cover art with nanobanana-app
+6. Upload the CZ version → podbean-app (draft)
+7. Upload the EN version → podbean-app (draft)
+8. Review the drafts and publish
 ```
 
-Každý krok může být samostatný skill pro Claude Code a všechny se dají zřetězit v jedné konverzaci.
+Each step can be its own Claude Code skill.
 
-## Řetěz automatizace
+## Automation chain
 
-Tohle CLI je poslední článek většího podcastového pipelinu poháněného AI:
+This CLI is the last step of a podcast pipeline run by AI:
 
-| Krok | Nástroj | Co dělá |
+| Step | Tool | What it does |
 |------|------|-------------|
-| Přepis | [whisper-cz-en](https://github.com/faborsky/whisper-cz-en) | Lokální přepis přes Whisper Large V3 (CZ/EN) |
-| Překlad | Claude Code | Překlad přepisů mezi češtinou a angličtinou |
-| Show notes | Claude Code | Popisy, názvy a shrnutí |
-| Obálka | [nanobanana-app](https://github.com/faborsky/nanobanana-app) | Grafika k epizodě přes AI |
-| Publikace | **podbean-app** (tohle repo) | Upload audia, vytvoření epizody, správa metadat |
+| Transcription | [whisper-cz-en](https://github.com/faborsky/whisper-cz-en) | Local transcription with Whisper Large V3 (CZ/EN) |
+| Translation | Claude Code | Translates transcripts between Czech and English |
+| Show notes | Claude Code | Descriptions, titles and summaries |
+| Cover art | [nanobanana-app](https://github.com/faborsky/nanobanana-app) | AI-generated episode artwork |
+| Publishing | **podbean-app** (this repo) | Audio upload, episode creation, metadata management |
 
-## Struktura projektu
+## Project structure
 
 ```
-podbean_cli.py        # hlavní CLI (jeden soubor)
-.env.example          # šablona pro API přístupy
-.env                  # tvoje přístupy (mimo git)
-.token_cache.json     # cachovaný OAuth token (generuje se sám, mimo git)
-.podcast_cache.json   # mapování slug → podcast_id (generuje se samo, mimo git)
-requirements.txt      # Python závislosti
-CLAUDE.md             # instrukce pro Claude Code
+podbean_cli.py        # main CLI (single file)
+.env.example          # template for API credentials
+.env                  # your credentials (not in git)
+.token_cache.json     # cached OAuth token (auto-generated, not in git)
+.podcast_cache.json   # slug → podcast_id mapping (auto-generated, not in git)
+requirements.txt      # Python dependencies
+CLAUDE.md             # instructions for Claude Code
 ```
-
-## O projektu
-
-Postavil [Jindřich Fáborský](https://github.com/faborsky) jako součást toolkitu na automatizaci podcastů. Běží v produkci na správě několika českých podcastů.
-
-Projekt je zároveň součástí osnovy mezinárodního kurzu [Vibe Coding for Marketers](https://vibecodingformarketers.com), kde se marketéři učí stavět si nástroje s AI.
 
 ---
 
-## Licence
+## License
 
-MIT
+MIT, see [LICENSE](LICENSE).
+
+## Author
+
+[Jindřich Fáborský](https://www.faborsky.com), marketer and educator from Prague. I teach marketers to build their own tools with AI.
+
+Podbean CLI started as part of my podcast automation toolkit and runs in production, managing several Czech podcasts.
